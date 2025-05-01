@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>Neon Music Terminal</title>
+    <style>
+        :root {
+            --primary: #00ff9d;
+            --secondary: #ff004d;
+            --bg: #0a0a0a;
+            --border: #00ff9d55;
+            --terminal-width: 480px;
+        }
+
+        body {
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: var(--bg);
+            font-family: 'Courier New', monospace;
+            color: var(--primary);
+        }
+
+        .terminal {
+            width: var(--terminal-width);
+            height: 380px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: #111;
+            overflow: hidden;
+            box-shadow: 0 0 12px #00ff9d33;
+            position: relative;
+        }
+
+        .display {
+            height: 82%;
+            padding: 12px;
+            overflow-y: auto;
+        }
+
+        .display::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .display::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: 3px;
+        }
+
+        .input-line {
+            border-top: 1px solid var(--border);
+            padding: 8px 12px;
+            display: flex;
+            background: #000;
+            position: sticky;
+            bottom: 0;
+        }
+
+        .prompt {
+            color: var(--secondary);
+            margin-left: 8px;
+            font-size: 14px;
+        }
+
+        #command {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--primary);
+            font-family: 'Courier New';
+            outline: none;
+            padding: 4px;
+            font-size: 13px;
+        }
+
+        .log-item {
+            margin: 5px 0;
+            white-space: pre-wrap;
+            line-height: 1.3;
+            font-size: 12px;
+        }
+
+        .progress-container {
+            height: 2px;
+            background: #ffffff1a;
+            margin: 10px 0;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: var(--primary);
+            width: 0;
+            transition: width 0.1s linear;
+        }
+
+        .playlist {
+            display: none;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            margin: 10px 0;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+
+        .playlist-item {
+            padding: 5px 10px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: all 0.2s;
+        }
+
+        .playlist-item:hover {
+            background: #00ff9d1a;
+        }
+        .playlist::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .playlist::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: 3px;
+        }
+
+        .now-playing {
+            background: #00ff9d1a !important;
+            border-left: 2px solid var(--primary);
+        }
+
+        .status-bar {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            background: #000;
+            padding: 3px 10px;
+            font-size: 10px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .rating-stars {
+            color: gold;
+            font-size: 14px;
+            margin-top: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="terminal">
+        <div class="status-bar">
+            <span>🎵 Neon Terminal v5.0</span>
+            <span id="time-display">00:00 / 00:00</span>
+        </div>
+        <div class="display" id="display">
+            <div class="log-item">⚡ اكتب 'help' لعرض الأوامر</div>
+            <div class="progress-container">
+                <div class="progress-bar" id="progress"></div>
+            </div>
+            <div class="playlist" id="playlist"></div>
+        </div>
+        <div class="input-line">
+            <span class="prompt">❯</span>
+            <input type="text" id="command" 
+                   placeholder="أدخل أمرًا..." 
+                   autocomplete="off"
+                   autofocus
+                   onkeypress="handleCommand(event)">
+        </div>
+    </div>
+
+<script>
+const Player = {
+    audio: new Audio(),
+    currentTrack: 0,
+    isShuffle: false,
+    isRepeat: false,
+    playlist: [],
+    ratings: {},
+    
+    init() {
+        this.loadPlaylist();
+        this.setupEventListeners();
+        this.loadTrack(0);
+    },
+
+    loadPlaylist() {
+        const songs = [
+            {id: "https://serv100.albumaty.com/dl/3en/abd-elhalim/singels/85.Ya_Kali_Al_2alb.mp3", name: "يا خلي القلب - عبد الحليم حافظ", duration: "10:33", lyrics: "كلمات الأغنية..."},
+            {id: "https://serv100.albumaty.com/dl/3en/abd-elhalim/singels/81.Quloulo_Alhakika.mp3", name: "قولوله الحقيقة - عبد الحليم حافظ", duration: "9:10", lyrics: "كلمات الأغنية..."},
+            {id: "https://serv100.albumaty.com/dl/3en/abd-elhalim/singels/59.Khosara.mp3", name: "خسارة - عبد الحليم حافظ", duration: "6:54", lyrics: "كلمات الأغنية..."},
+            {id: "https://serv100.albumaty.com/dl/3en/abd-elhalim/singels/44.Gana_El_Hawa.mp3", name: "جانا الهوى - عبد الحليم حافظ", duration: "12:23", lyrics: "كلمات الأغنية..."},
+            {id: "https://serv100.albumaty.com/dl/3en/abd-elhalim/singels/35.El_7elwa.mp3", name: "الحلوة - عبد الحليم حافظ", duration: "9:19", lyrics: "كلمات الأغنية..."},
+            {id: "https://serv100.albumaty.com/dl/3en/abd-elhalim/singels/25.Bitlomony_Leih.mp3", name: "بتلوموني ليه- عبد الحليم حافظ", duration: "8:40", lyrics: "كلمات الأغنية..."},
+            {id: "https://serv100.albumaty.com/dl/3en/abd-elhalim/singels/16.Asmar_Ya_Asmarani.mp3", name: "أسمر يا أسمراني - عبد الحليم حافظ", duration: "6:39", lyrics: "كلمات الأغنية..."},
+            {id: "https://serv100.albumaty.com/dl/3en/abd-elhalim/singels/12.Ana_Kol_Ma_Gool_Ettouba.mp3", name: "التوبة - عبد الحليم حافظ", duration: "5:33", lyrics: "كلمات الأغنية..."},
+            {id: "https://serv100.albumaty.com/dl/3en/abd-elhalim/singels/09.Ala_Hesb_Wedad.mp3", name: "على حسب وداد - عبد الحليم حافظ", duration: "10:38", lyrics: "كلمات الأغنية..."},
+            {id: "https://serv100.albumaty.com/dl/3en/abd-elhalim/singels/37.Elhawa_Hawaya.mp3", name: "الهوى هوايا - عبد الحليم حافظ", duration: "7:33", lyrics: "كلمات الأغنية..."},
+        ];
+
+        const playlistEl = document.getElementById('playlist');
+        this.playlist = songs.map((song, index) => {
+            const item = document.createElement('div');
+            item.className = 'playlist-item';
+            item.textContent = `${index + 1}. ${song.name}`;
+            item.dataset.id = song.id;
+            item.addEventListener('click', () => this.loadTrack(index));
+            playlistEl.appendChild(item);
+            return song;
+        });
+    },
+
+    setupEventListeners() {
+        this.audio.addEventListener('timeupdate', () => this.updatePlayerInfo());
+        this.audio.addEventListener('ended', () => this.nextTrack());
+        this.audio.addEventListener('loadedmetadata', () => this.updateDuration());
+    },
+
+    loadTrack(index) {
+        this.currentTrack = index;
+        this.audio.src = this.playlist[index].id;
+        this.audio.play();
+        this.highlightTrack();
+        log(`▶ التشغيل: ${this.playlist[index].name}`, 'success');
+    },
+
+    highlightTrack() {
+        document.querySelectorAll('.playlist-item').forEach((item, i) => {
+            item.classList.toggle('now-playing', i === this.currentTrack);
+        });
+    },
+
+    updateDuration() {
+        document.getElementById('time-display').textContent = 
+            this.formatTime(this.audio.currentTime) + 
+            " / " + 
+            this.playlist[this.currentTrack].duration;
+    },
+
+    updatePlayerInfo() {
+        document.getElementById('progress').style.width = 
+            `${(this.audio.currentTime / this.audio.duration) * 100}%`;
+        this.updateDuration();
+    },
+
+    formatTime(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    },
+
+    nextTrack() {
+        if(!this.isRepeat) {
+            this.currentTrack = this.isShuffle ? 
+                Math.floor(Math.random() * this.playlist.length) : 
+                (this.currentTrack + 1) % this.playlist.length;
+            this.loadTrack(this.currentTrack);
+        }
+    }
+};
+
+const CommandSystem = {
+    commands: {
+        help: () => {
+            log('<strong>🛠️ قائمة الأوامر:</strong>', 'info');
+            log('play/pause/stop - التحكم الأساسي');
+            log('next/prev - التغيير بين الأغاني');
+            log('shuffle - التشغيل العشوائي');
+            log('repeat - تكرار الأغنية');
+            log('volume [0-100] - مستوى الصوت');
+            log('search [كلمة] - بحث في الأغاني');
+            log('rate [1-5] - تقييم الأغنية');
+            log('info - معلومات الأغنية');
+            log('lyrics - عرض الكلمات');
+            log('list - عرض/إخفاء القائمة');
+        },
+
+        play: () => {
+            Player.audio.play();
+            log('▶ بدء التشغيل', 'success');
+        },
+
+        pause: () => {
+            Player.audio.pause();
+            log('⏸ إيقاف مؤقت', 'warning');
+        },
+
+        stop: () => {
+            Player.audio.pause();
+            Player.audio.currentTime = 0;
+            log('⏹ إيقاف كامل', 'error');
+        },
+
+        next: () => {
+            Player.nextTrack();
+        },
+
+        prev: () => {
+            Player.currentTrack = Player.currentTrack > 0 ? Player.currentTrack - 1 : Player.playlist.length - 1;
+            Player.loadTrack(Player.currentTrack);
+        },
+
+        shuffle: () => {
+            Player.isShuffle = !Player.isShuffle;
+            log(`🎲 التشغيل العشوائي ${Player.isShuffle ? 'مفعل' : 'معطل'}`, 'success');
+        },
+
+        repeat: () => {
+            Player.isRepeat = !Player.isRepeat;
+            log(`🔂 التكرار ${Player.isRepeat ? 'مفعل' : 'معطل'}`, 'success');
+        },
+
+        volume: (args) => {
+            const volume = parseInt(args[0]) / 100;
+            if(!isNaN(volume)) {
+                Player.audio.volume = volume;
+                log(`🔊 الصوت: ${Math.round(volume * 100)}%`, 'success');
+            }
+        },
+
+        search: (args) => {
+            const query = args.join(' ').toLowerCase();
+            const results = Player.playlist.filter(song => 
+                song.name.toLowerCase().includes(query)
+            );
+            log(`🔍 نتائج البحث (${results.length}):`);
+            results.forEach((song, index) => 
+                log(`${index + 1}. ${song.name}`)
+            );
+        },
+
+        rate: (args) => {
+            const rating = parseInt(args[0]);
+            if(rating >= 1 && rating <= 5) {
+                Player.ratings[Player.currentTrack] = rating;
+                log(`⭐ التقييم: ${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}`, 'success');
+            }
+        },
+
+        info: () => {
+            const track = Player.playlist[Player.currentTrack];
+            log(`
+                🎵 ${track.name}
+                ⏱️ المدة: ${track.duration}
+                ${Player.ratings[Player.currentTrack] ? '⭐ التقييم: ' + '★'.repeat(Player.ratings[Player.currentTrack]) : ''}
+            `);
+        },
+
+        lyrics: () => {
+            const lyrics = Player.playlist[Player.currentTrack].lyrics;
+            log(`📜 الكلمات:\n${lyrics}`);
+        },
+
+        list: () => {
+            const playlist = document.getElementById('playlist');
+            playlist.style.display = playlist.style.display === 'block' ? 'none' : 'block';
+        }
+    }
+};
+
+function log(message, type = 'info') {
+    const colors = {
+        info: '#00ff9d',
+        success: '#00ff9d',
+        error: '#ff004d',
+        warning: '#ff9d00'
+    };
+    
+    const logEntry = document.createElement('div');
+    logEntry.className = 'log-item';
+    logEntry.innerHTML = `▸ ${message}`;
+    logEntry.style.color = colors[type];
+    
+    document.getElementById('display').appendChild(logEntry);
+    document.getElementById('display').scrollTop = document.getElementById('display').scrollHeight;
+}
+
+function handleCommand(e) {
+    if(e.key === 'Enter') {
+        const input = document.getElementById('command').value.trim().split(' ');
+        const [command, ...args] = input;
+        document.getElementById('command').value = '';
+        
+        if(CommandSystem.commands[command]) {
+            CommandSystem.commands[command](args);
+        } else {
+            log(`⚠️ أمر غير معروف: ${command}`, 'error');
+        }
+    }
+}
+
+Player.init();
+</script>
+</body>
+</html>
